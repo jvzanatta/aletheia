@@ -1,7 +1,8 @@
 import React, { Component } from "react";
 import { Layout, Row } from "antd";
-import { BrowserRouter as Router, Route, Switch } from "react-router-dom";
+import { Route, Switch } from "react-router-dom";
 import { withTranslation } from "react-i18next";
+import api from "./api/user";
 import "./App.less";
 
 import ClaimCreate from "./components/Claim/ClaimCreate";
@@ -10,24 +11,57 @@ import PersonalityList from "./components/Personality/PersonalityList";
 import PersonalityView from "./components/Personality/PersonalityView";
 import PersonalityCreateForm from "./components/Personality/PersonalityCreateForm";
 import AletheiaHeader from "./components/Header/AletheiaHeader";
+import Home from "./components/Home/Home";
 import BackButton from "./components/BackButton";
 import PersonalityCreateSearch from "./components/Personality/PersonalityCreateSearch";
+import { connect } from "react-redux";
+import SearchOverlay from "./components/SearchOverlay";
+import Sidebar from "./components/Sidebar";
+import LoginView from "./components/Login/LoginView";
 
-const { Footer, Content } = Layout;
+const { Footer, Content, Sider } = Layout;
 
 class App extends Component {
+    setLogin(login) {
+        return {
+            type: "SET_LOGIN_VALIDATION",
+            login
+        };
+    }
+    validateSession() {
+        return dispatch => {
+            return api
+                .validateSession({}, this.props.t)
+                .then(result => dispatch(this.setLogin(result.login)));
+        };
+    }
+
+    async componentDidMount() {
+        this.props.dispatch(this.validateSession());
+    }
+
     render() {
-        const { t } = this.props;
+        const { t, enableOverlay } = this.props;
         return (
-            <Layout style={{ minHeight: "100vh" }}>
-                <AletheiaHeader />
-                <Content className="main-content">
-                    <Router>
+            <>
+                <Sidebar
+                    menuCollapsed={this.props.menuCollapsed}
+                    onToggleSidebar={() => {
+                        this.props.dispatch({
+                            type: "TOGGLE_MENU",
+                            menuCollapsed: !this.props.menuCollapsed
+                        });
+                    }}
+                />
+                <Layout>
+                    <AletheiaHeader />
+                    <Content className="main-content">
                         <Row style={{ padding: "0 30px", marginTop: "10px" }}>
                             <BackButton />
                         </Row>
                         <Switch>
-                            <Route exact path="/" component={PersonalityList} />
+                            <Route exact path="/login" component={LoginView} />
+                            <Route exact path="/" component={Home} />
                             <Route
                                 exact
                                 path="/personality"
@@ -81,14 +115,23 @@ class App extends Component {
                                 )}
                             />
                         </Switch>
-                    </Router>
-                </Content>
-                <Footer style={{ textAlign: "center" }}>
-                    {t("footer:copyright")}
-                </Footer>
-            </Layout>
+                    </Content>
+                    <Footer style={{ textAlign: "center" }}>
+                        {t("footer:copyright")}
+                    </Footer>
+                    {enableOverlay && <SearchOverlay overlay={enableOverlay} />}
+                </Layout>
+            </>
         );
     }
 }
 
-export default withTranslation()(App);
+const mapStateToProps = state => {
+    return {
+        isLoggedIn: state?.login || false,
+        enableOverlay: state?.search?.overlay,
+        menuCollapsed:
+            state?.menuCollapsed !== undefined ? state?.menuCollapsed : true
+    };
+};
+export default connect(mapStateToProps)(withTranslation()(App));

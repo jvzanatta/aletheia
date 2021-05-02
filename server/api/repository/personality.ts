@@ -1,42 +1,28 @@
-import util from "../../lib/util";
+import { ILogger } from "../../lib/loggerInterface";
+import WikidataResolver from "../../lib/wikidataResolver";
+
+const util = require("../../lib/util");
 const Personality = require("../model/personalityModel");
-
 const ClaimReview = require("../model/claimReviewModel");
-const WikidataResolver = require("../../lib/wikidataResolver");
-
-const optionsToUpdate = {
-    new: true,
-    upsert: true
-};
-
-const wikidata = new WikidataResolver();
 
 /**
  * @class PersonalityRepository
  */
-module.exports = class PersonalityRepository {
-    /**
-     * https://medium.com/javascript-in-plain-english/javascript-merge-duplicate-objects-in-array-of-objects-9a76c3a1c35c
-     * @param array
-     * @param property
-     */
-    static mergeObjectsInUnique<T>(array: T[], property: any): T[] {
-        const newArray = new Map();
+export default class PersonalityRepository {
+    optionsToUpdate: Object;
+    wikidata: WikidataResolver;
+    logger: ILogger;
 
-        array.forEach((item: T) => {
-            const propertyValue = item[property];
-            newArray.has(propertyValue)
-                ? newArray.set(propertyValue, {
-                      ...item,
-                      ...newArray.get(propertyValue)
-                  })
-                : newArray.set(propertyValue, item);
-        });
-
-        return Array.from(newArray.values());
+    constructor(logger: any = {}) {
+        this.logger = logger;
+        this.wikidata = new WikidataResolver();
+        this.optionsToUpdate = {
+            new: true,
+            upsert: true
+        };
     }
 
-    static async listAll(
+    async listAll(
         page,
         pageSize,
         order,
@@ -47,14 +33,14 @@ module.exports = class PersonalityRepository {
         let personalities = await Personality.find(query)
             .skip(page * pageSize)
             .limit(pageSize)
-            .sort({ createdAt: order })
+            .sort({ _id: order })
             .lean();
         if (withSuggestions) {
-            const wbentities = await wikidata.queryWikibaseEntities(
+            const wbentities = await this.wikidata.queryWikibaseEntities(
                 query.name.$regex,
                 language
             );
-            personalities = this.mergeObjectsInUnique(
+            personalities = util.mergeObjectsInUnique(
                 [...wbentities, ...personalities],
                 "wikidata"
             );
@@ -66,25 +52,30 @@ module.exports = class PersonalityRepository {
         );
     }
 
-    static create(personality) {
+    create(personality) {
         try {
             const newPersonality = new Personality(personality);
+            this.logger.log(
+                "info",
+                `Attempting to create new personality with data ${personality}`
+            );
             return newPersonality.save();
         } catch (err) {}
     }
 
-    static async getById(personalityId, language = "en") {
+    async getById(personalityId, language = "en") {
         const personality = await Personality.findById(personalityId).populate({
             path: "claims",
             select: "_id title content"
         });
+        this.logger.log("info", `Found personality ${personality}`);
         return await this.postProcess(personality.toObject(), language);
     }
 
-    private static async postProcess(personality, language: string = "en") {
+    private async postProcess(personality, language: string = "en") {
         if (personality) {
             // TODO: allow wikdiata resolver to fetch in batches
-            const wikidataExtract = await wikidata.fetchProperties({
+            const wikidataExtract = await this.wikidata.fetchProperties({
                 wikidataId: personality.wikidata,
                 language
             });
@@ -107,17 +98,18 @@ module.exports = class PersonalityRepository {
         return personality;
     }
 
-    static async getReviewStats(id) {
+    async getReviewStats(id) {
         const personality = await Personality.findById(id);
         const reviews = await ClaimReview.aggregate([
             { $match: { personality: personality._id } },
             { $group: { _id: "$classification", count: { $sum: 1 } } },
             { $sort: { count: -1 } }
         ]);
+        this.logger.log("info", `Got stats ${reviews}`);
         return util.formatStats(reviews, true);
     }
 
-    static async update(personalityId, personalityBody) {
+    async update(personalityId, personalityBody) {
         // eslint-disable-next-line no-useless-catch
         try {
             const personality = await this.getById(personalityId);
@@ -125,7 +117,11 @@ module.exports = class PersonalityRepository {
             const personalityUpdate = await Personality.findByIdAndUpdate(
                 personalityId,
                 newPersonality,
-                optionsToUpdate
+                this.optionsToUpdate
+            );
+            this.logger.log(
+                "info",
+                `Updated personality with data ${newPersonality}`
             );
             return personalityUpdate;
         } catch (error) {
@@ -134,15 +130,15 @@ module.exports = class PersonalityRepository {
         }
     }
 
-    static delete(personalityId) {
+    delete(personalityId) {
         return Personality.findByIdAndRemove(personalityId);
     }
 
-    static count(query) {
+    count(query) {
         return Personality.countDocuments().where(query);
     }
 
-    private static extractClaimWithTextSummary(claims: any) {
+    private extractClaimWithTextSummary(claims: any) {
         return claims.map(claim => {
             if (!claim.content) {
                 return claim;
@@ -150,4 +146,4 @@ module.exports = class PersonalityRepository {
             return { ...claim, content: claim.content.text };
         });
     }
-};
+}

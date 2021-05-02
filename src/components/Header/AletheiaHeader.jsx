@@ -1,14 +1,20 @@
 import React, { Component } from "react";
-import { MenuOutlined, UserOutlined } from "@ant-design/icons";
-import { Col, Row } from "antd";
+import { MenuOutlined, SearchOutlined } from "@ant-design/icons";
+import { Col, Layout, Row } from "antd";
 import { withTranslation } from "react-i18next";
 import { connect } from "react-redux";
 
 import api from "../../api/personality";
-import InputSearch from "../Form/InputSearch";
 import "./AletheiaHeader.less";
+import { withRouter } from "react-router-dom";
+
+const { Header } = Layout;
 
 class AletheiaHeader extends Component {
+    static defaultProps = {
+        search: true
+    };
+
     handleInputSearch(name) {
         this.props.dispatch({
             type: "SET_SEARCH_NAME",
@@ -19,17 +25,24 @@ class AletheiaHeader extends Component {
     }
 
     render() {
-        const { t } = this.props;
+        const { t, search } = this.props;
         return (
-            <header className="aletheia-header">
-                <nav>
-                    <Row>
-                        <Col flex={1}>
-                            <p className="aletheia-logo">Aletheia</p>
-                        </Col>
-                    </Row>
-                    <Row>
-                        <Col>
+            <Header
+                style={{
+                    padding: "0",
+                    marginBottom: "6px"
+                }}
+            >
+                <Row className="aletheia-header">
+                    <Col span={2}>
+                        <a
+                            onClick={() => {
+                                this.props.dispatch({
+                                    type: "TOGGLE_MENU",
+                                    menuCollapsed: !this.props.menuCollapsed
+                                });
+                            }}
+                        >
                             <MenuOutlined
                                 style={{
                                     fontSize: "16px",
@@ -37,35 +50,52 @@ class AletheiaHeader extends Component {
                                     padding: "8px"
                                 }}
                             />
-                        </Col>
-                        <Col flex={1}>
-                            <InputSearch
-                                placeholder={t("header:search_personality")}
-                                callback={this.handleInputSearch.bind(this)}
-                            />
-                        </Col>
-                        <Col>
-                            <UserOutlined
+                        </a>
+                    </Col>
+                    <Col span={20}>
+                        <a onClick={() => this.props.history.push("/")}>
+                            <p className="aletheia-logo">AletheiaFact</p>
+                        </a>
+                    </Col>
+                    <Col span={2}>
+                        <a
+                            onClick={() => {
+                                const pathname = this.props.history.location
+                                    .pathname;
+                                this.props.dispatch({
+                                    type: "ENABLE_SEARCH_OVERLAY",
+                                    overlay: {
+                                        search: true,
+                                        results: pathname !== "/personality"
+                                    }
+                                });
+                            }}
+                        >
+                            <SearchOutlined
                                 style={{
                                     fontSize: "16px",
                                     color: "white",
                                     padding: "8px"
                                 }}
                             />
-                        </Col>
-                    </Row>
-                </nav>
-            </header>
+                        </a>
+                    </Col>
+                </Row>
+            </Header>
         );
     }
 }
 
 const mapStateToProps = state => {
     return {
-        page: (state && state.searchCurPage) || 1,
-        pageSize: (state && state.searchPageSize) || 10,
-        searchName: (state && state.searchInput) || null
+        page: state?.search?.searchCurPage || 1,
+        pageSize: state?.search?.searchPageSize || 10,
+        searchName: state?.search?.searchInput || null,
+        menuCollapsed:
+            state?.menuCollapsed !== undefined ? state?.menuCollapsed : true
     };
 };
 
-export default connect(mapStateToProps)(withTranslation()(AletheiaHeader));
+export default connect(mapStateToProps)(
+    withTranslation()(withRouter(AletheiaHeader))
+);

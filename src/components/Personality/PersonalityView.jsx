@@ -1,49 +1,48 @@
 import React, { Component } from "react";
 import { withRouter } from "react-router-dom";
-import axios from "axios";
 import { Spin, Row } from "antd";
 import { withTranslation } from "react-i18next";
-
+import api from "../../api/personality";
 import "./PersonalityView.less";
 import PersonalityCard from "./PersonalityCard";
 import AffixButton from "../Form/AffixButton";
-import ClaimCard from "../Claim/ClaimCard";
-import ReviewStats from "../ReviewStats";
+import ClaimList from "../Claim/ClaimList";
+import ToggleSection from "../ToggleSection";
+import MetricsOverview from "../Metrics/MetricsOverview";
+import SocialMediaShare from "../SocialMediaShare";
 
 class PersonalityView extends Component {
     constructor(props) {
         super(props);
         this.createClaim = this.createClaim.bind(this);
-        this.viewClaim = this.viewClaim.bind(this);
-        this.state = {};
+        this.onSectionChange = this.onSectionChange.bind(this);
+        this.state = {
+            showSpeechesSection: true
+        };
         this.tooltipVisible = true;
         setTimeout(() => {
             this.tooltipVisible = false;
         }, 2500);
     }
 
-    componentDidMount() {
-        const self = this;
-        self.getPersonality();
+    componentDidUpdate(prevProps) {
+        if (prevProps.match.params.id !== this.props.match.params.id) {
+            this.getPersonality();
+        }
     }
 
-    getPersonality() {
-        axios
-            .get(
-                `${process.env.API_URL}/personality/${this.props.match.params.id}`,
-                {
-                    params: {
-                        language: this.props.i18n.languages[0]
-                    }
-                }
-            )
-            .then(response => {
-                const personality = response.data;
-                this.setState({ personality });
-            })
-            .catch(() => {
-                console.log("Error while fetching Personality");
-            });
+    async getPersonality() {
+        const personality = await api.getPersonality(
+            this.props.match.params.id,
+            {
+                language: this.props.i18n.languages[0]
+            }
+        );
+        this.setState({ personality });
+    }
+
+    componentDidMount() {
+        this.getPersonality();
     }
 
     createClaim() {
@@ -51,81 +50,43 @@ class PersonalityView extends Component {
         this.props.history.push(path);
     }
 
-    viewClaim(id) {
-        const path = `./${this.props.match.params.id}/claim/${id}`;
-        this.props.history.push(path);
+    onSectionChange(e) {
+        this.setState({
+            showSpeechesSection: e.target.value
+        });
     }
 
     render() {
         const personality = this.state.personality;
         const { t } = this.props;
         if (personality) {
-            const imageStyle = {
-                backgroundImage: `url(${personality.image})`
-            };
             return (
                 <>
                     <PersonalityCard personality={personality} />
-
-                    <Row style={{ padding: "5px 30px" }}>
-                        <Row
-                            style={{
-                                width: "100%",
-                                flexDirection: "column",
-                                textAlign: "center",
-                                fontWeight: "bold",
-                                color: "#262626",
-                                padding: "10px 0 25px 0px"
-                            }}
-                        >
-                            <span>
-                                <span
-                                    style={{
-                                        color: "#70b0d6",
-                                        fontSize: "20px"
-                                    }}
-                                >
-                                    {personality.stats.total}
-                                </span>{" "}
-                                Claims reviewed
-                            </span>
-                            <small>
-                                from{" "}
-                                <span style={{ color: "#70b0d6" }}>
-                                    {personality.claims.length}
-                                </span>{" "}
-                                speeches
-                            </small>
-                        </Row>
-                        <Row
-                            style={{
-                                justifyContent: "space-between",
-                                width: "100%"
-                            }}
-                        >
-                            <ReviewStats
-                                stats={personality.stats}
-                                type="circle"
-                                format="count"
-                                strokeWidth="16"
-                            />
-                        </Row>
-                    </Row>
                     <br />
                     <AffixButton
                         tooltipTitle={t("personality:affixButtonTitle")}
                         onClick={this.createClaim}
                     />
-                    <Row style={{ background: "white" }}>
-                        {personality.claims.map((claim, claimIndex) => (
-                            <ClaimCard
-                                key={claimIndex}
-                                personality={personality}
-                                claim={claim}
-                                viewClaim={this.viewClaim}
-                            />
-                        ))}
+                    <Row
+                        style={{
+                            textAlign: "center",
+                            width: "100%"
+                        }}
+                    >
+                        <ToggleSection
+                            defaultValue={this.state.showSpeechesSection}
+                            labelTrue={t("personality:toggleSectionSpeeches")}
+                            labelFalse={t("metrics:headerTitle")}
+                            onChange={this.onSectionChange}
+                        ></ToggleSection>
                     </Row>
+                    {this.state.showSpeechesSection ? (
+                        <ClaimList personality={personality}></ClaimList>
+                    ) : (
+                        <MetricsOverview stats={personality.stats} />
+                    )}
+                    <SocialMediaShare quote={personality.name} />
                 </>
             );
         } else {

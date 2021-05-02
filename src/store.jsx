@@ -1,4 +1,5 @@
-import { createStore } from "redux";
+import { createStore, applyMiddleware } from "redux";
+import thunk from "redux-thunk";
 
 /**
  * This is a reducer, a pure function with (state, action) => state signature.
@@ -12,16 +13,58 @@ import { createStore } from "redux";
  * follows a different convention (such as function maps) if it makes sense for your
  * project.
  */
-function handleSearchData(state, action) {
+function appReducer(state, action) {
     switch (action.type) {
+        case "TOGGLE_MENU":
+            return {
+                ...state,
+                menuCollapsed: action.menuCollapsed
+            };
+        case "ENABLE_SEARCH_OVERLAY":
+            return {
+                ...state,
+                search: {
+                    ...(state?.search || {}),
+                    overlay: action.overlay
+                }
+            };
         case "SEARCH_RESULTS":
-            return { ...state, searchResults: action.results };
+            return {
+                ...state,
+                search: {
+                    ...(state?.search || {}),
+                    searchResults: action.results
+                }
+            };
         case "SET_TOTAL_PAGES":
-            return { ...state, searchTotalPages: action.totalPages };
+            return {
+                ...state,
+                search: {
+                    ...(state?.search || {}),
+                    searchTotalPages: action.totalPages
+                }
+            };
         case "SET_CUR_PAGE":
-            return { ...state, searchCurPage: action.page };
+            return {
+                ...state,
+                search: {
+                    ...(state?.search || {}),
+                    searchCurPage: action.page
+                }
+            };
         case "SET_SEARCH_NAME":
-            return { ...state, searchInput: action.searchName };
+            return {
+                ...state,
+                search: {
+                    ...(state?.search || {}),
+                    searchInput: action.searchName
+                }
+            };
+        case "SET_LOGIN_VALIDATION":
+            return {
+                ...state,
+                login: action.login
+            };
         default:
             return state;
     }
@@ -29,6 +72,6 @@ function handleSearchData(state, action) {
 
 // Create a Redux store holding the state of your app.
 // Its API is { subscribe, dispatch, getState }.
-const store = createStore(handleSearchData);
+const store = createStore(appReducer, applyMiddleware(thunk));
 
 export default store;

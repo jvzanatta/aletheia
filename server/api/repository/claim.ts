@@ -1,22 +1,45 @@
 import Parser from "../../lib/parser";
+import { ILogger } from "../../lib/loggerInterface";
+import ClaimReviewRepository from "./claimReview";
+
 const Claim = require("../model/claimModel");
-const ClaimReview = require("../model/claimReviewModel");
 const Personality = require("../model/personalityModel");
-const util = require("../../lib/util");
-const optionsToUpdate = {
-    new: true,
-    upsert: true
-};
 
 /**
  * @class ClaimRepository
  */
-module.exports = class ClaimRepository {
-    static listAll() {
-        return Claim.find({}).lean();
+export default class ClaimRepository {
+    optionsToUpdate: Object;
+    logger: ILogger;
+    private claimReviewRepository: ClaimReviewRepository;
+
+    constructor(logger: any = {}) {
+        this.logger = logger;
+        this.claimReviewRepository = new ClaimReviewRepository(logger);
+        this.optionsToUpdate = {
+            new: true,
+            upsert: true
+        };
     }
 
-    static create(claim) {
+    async listAll(page, pageSize, order, query) {
+        const claims = await Claim.find(query)
+            .skip(page * pageSize)
+            .limit(pageSize)
+            .sort({ _id: order })
+            .lean();
+        return Promise.all(
+            claims.map(claim => {
+                return this.postProcess(claim);
+            })
+        );
+    }
+
+    count(query) {
+        return Claim.countDocuments().where(query);
+    }
+
+    create(claim) {
         return new Promise((resolve, reject) => {
             const p = new Parser();
             claim.content = p.parse(claim.content);
@@ -40,34 +63,81 @@ module.exports = class ClaimRepository {
         });
     }
 
-    static async getById(claimId) {
+    async getById(claimId) {
         const claim = await Claim.findById(claimId)
             .populate("personality", "_id name")
-            .populate("claimReviews", "_id classification")
             .populate("sources", "_id link classification");
-
-        return await this.postProcess(claim.toObject());
-    }
-
-    private static async postProcess(personality) {
-        if (personality) {
-            const stats = await this.getReviewStats(personality._id);
-            return Object.assign(personality, { stats });
+        if (!claim) {
+            // TODO: handle 404 for claim not found
+            return {};
         }
 
-        return personality;
+        return this.postProcess(claim.toObject());
     }
 
-    static async getReviewStats(id) {
-        const claim = await Claim.findById(id);
-        const reviews = await ClaimReview.aggregate([
-            { $match: { claim: claim._id } },
-            { $group: { _id: "$classification", count: { $sum: 1 } } }
-        ]);
-        return util.formatStats(reviews);
+    private async postProcess(claim) {
+        const reviews = await this.claimReviewRepository.getReviewsByClaimId(
+            claim._id
+        );
+        if (claim) {
+            if (claim?.content?.object) {
+                claim.content.object = this.transformContentObject(
+                    claim.content.object,
+                    reviews
+                );
+            }
+            const reviewStats = await this.claimReviewRepository.getReviewStatsByClaimId(
+                claim._id
+            );
+            const overallStats = this.calculateOverallStats(claim);
+            const stats = { ...reviewStats, ...overallStats };
+            claim = Object.assign(claim, { stats });
+        }
+
+        return claim;
     }
 
-    static async update(claimId, claimBody) {
+    private calculateOverallStats(claim) {
+        let totalClaims = 0;
+        let totalClaimsReviewed = 0;
+        if (claim?.content?.object) {
+            claim.content.object.forEach(p => {
+                totalClaims += p.content.length;
+                p.content.forEach(sentence => {
+                    if (sentence.props.topClassification) {
+                        totalClaimsReviewed++;
+                    }
+                });
+            }, 0);
+        }
+        return {
+            totalClaims,
+            totalClaimsReviewed
+        };
+    }
+
+    private transformContentObject(claimContent, reviews) {
+        if (!claimContent || reviews.length <= 0) {
+            return claimContent;
+        }
+        claimContent.forEach((paragraph, paragraphIndex) => {
+            paragraph.content.forEach((sentence, sentenceIndex) => {
+                const claimReview = reviews.find(review => {
+                    return review._id === sentence.props["data-hash"];
+                });
+                if (claimReview) {
+                    claimContent[paragraphIndex].content[
+                        sentenceIndex
+                    ].props = Object.assign(sentence.props, {
+                        topClassification: claimReview.topClassification
+                    });
+                }
+            });
+        });
+        return claimContent;
+    }
+
+    async update(claimId, claimBody) {
         // eslint-disable-next-line no-useless-catch
         try {
             const claim = await this.getById(claimId);
@@ -77,7 +147,7 @@ module.exports = class ClaimRepository {
             const claimUpdate = await Claim.findByIdAndUpdate(
                 claimId,
                 newClaim,
-                optionsToUpdate
+                this.optionsToUpdate
             );
             return claimUpdate;
         } catch (error) {
@@ -86,7 +156,7 @@ module.exports = class ClaimRepository {
         }
     }
 
-    static delete(claimId) {
+    delete(claimId) {
         return Claim.findByIdAndRemove(claimId);
     }
-};
+}
